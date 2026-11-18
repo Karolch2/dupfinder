@@ -1,5 +1,6 @@
 """Glowna klasa programu - szukanie duplikatow."""
 import functools
+import logging
 import threading
 from collections import defaultdict
 from collections.abc import Callable
@@ -7,9 +8,11 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from dupfinder.hasher import hash_file
+from dupfinder.hasher import safe_hash
 from dupfinder.patterns import parse_extensions
 from dupfinder.scanner import filter_by_extension, walk_files
+
+logger = logging.getLogger("dupfinder")
 
 
 def requires_scan(method: Callable) -> Callable:
@@ -54,6 +57,7 @@ class DuplicateFinder:
 
     def scan(self) -> int:
         """Zbiera liste plikow do sprawdzenia, zwraca ile ich jest."""
+        logger.debug("Skanuje folder %s (rozszerzenia: %s)", self.root, self.extensions or "wszystkie")
         self.files = list(filter_by_extension(walk_files(self.root), self.extensions))
         return len(self.files)
 
@@ -62,7 +66,9 @@ class DuplicateFinder:
         """Liczy skroty po kolei i zwraca tylko grupy z wiecej niz 1 plikiem."""
         groups: dict[str, list[Path]] = defaultdict(list)
         for path in self.files:
-            groups[hash_file(path)].append(path)
+            file_hash = safe_hash(path)
+            if file_hash is not None:  # None = pliku nie dalo sie przeczytac, pomijam
+                groups[file_hash].append(path)
         return self.only_duplicates(groups)
 
     @requires_scan
@@ -72,7 +78,9 @@ class DuplicateFinder:
         lock = threading.Lock()  # klodka na wspolny slownik groups
 
         def worker(path: Path) -> None:
-            file_hash = hash_file(path)  # to moze sie dziac w wielu watkach naraz
+            file_hash = safe_hash(path)  # to moze sie dziac w wielu watkach naraz
+            if file_hash is None:
+                return
             with lock:  # ale do slownika wpisuje tylko jeden watek na raz
                 groups[file_hash].append(path)
 
@@ -85,17 +93,19 @@ class DuplicateFinder:
         """To samo, ale skroty licza sie w osobnych procesach (kazdy ma wlasny GIL)."""
         with ProcessPoolExecutor(max_workers=self.workers) as executor:
             # procesy tylko licza skroty i odsylaja je z powrotem, w tej samej kolejnosci co pliki
-            hashes = list(executor.map(hash_file, self.files, chunksize=8))
+            hashes = list(executor.map(safe_hash, self.files, chunksize=8))
 
         # slownik wypelnia tutaj, w glownym procesie, wiec klodka nie jest potrzebna
         groups: dict[str, list[Path]] = defaultdict(list)
         for path, file_hash in zip(self.files, hashes):
-            groups[file_hash].append(path)
+            if file_hash is not None:
+                groups[file_hash].append(path)
         return self.only_duplicates(groups)
 
     @staticmethod
     def only_duplicates(groups: dict[str, list[Path]]) -> dict[str, list[Path]]:
         """Zostawia tylko grupy w ktorych jest wiecej niz 1 plik."""
+        logger.debug("Policzono skroty, unikalnych zawartosci: %d", len(groups))
         return {h: paths for h, paths in groups.items() if len(paths) > 1}
 
 

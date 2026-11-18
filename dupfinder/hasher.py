@@ -1,16 +1,30 @@
 """Liczenie skrotu SHA-256 pliku."""
 import hashlib
+import logging
 from pathlib import Path
 
+from dupfinder.decorators import retry
 from dupfinder.reader import ChunkReader
 
+logger = logging.getLogger("dupfinder")
 
+
+@retry(attempts=3, delay=0.2)
 def hash_file(path: Path) -> str:
     """Liczy SHA-256 pliku czytajac go kawalkami, zwraca skrot jako tekst."""
     sha = hashlib.sha256()
     for chunk in ChunkReader(path):
         sha.update(chunk)  # dorzucam kolejny kawalek do liczenia
     return sha.hexdigest()
+
+def safe_hash(path: Path) -> str | None:
+    """Jak hash_file, ale jak pliku nie da sie przeczytac to zwraca None zamiast wywalac program."""
+    try:
+        return hash_file(path)
+    except OSError as error:
+        logger.warning("Pomijam plik %s (%s)", path, error)
+        return None
+
 
 def simple_checksum(path: Path, limit: int = 256 * 1024) -> int:
     """Prosta suma kontrolna w czystym Pythonie - tylko do benchmarku GIL.
@@ -43,3 +57,6 @@ if __name__ == "__main__":
     # suma w czystym Pythonie - oryginal i kopia tez musza miec taka sama
     print("Suma oryginalu:", simple_checksum(original))
     print("Suma kopii:    ", simple_checksum(copy))
+
+    # plik ktorego nie ma - retry sprobuje 3 razy, a safe_hash zwroci None
+    print("Brakujacy plik:", safe_hash(test_dir / "nie_ma_mnie.txt"))

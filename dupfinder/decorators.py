@@ -1,9 +1,11 @@
 """Dekoratory."""
 import functools
+import logging
 import time
 from collections.abc import Callable
 from typing import Any
 
+logger = logging.getLogger("dupfinder")
 
 def timer(func: Callable) -> Callable:
     """Dekorator ktory mierzy ile trwa wykonanie funkcji."""
@@ -36,8 +38,7 @@ def retry(attempts: int = 3, delay: float = 0.5) -> Callable:
                 except OSError as error:
                     if attempt == attempts:  # to byla ostatnia proba
                         raise
-                    print(f"[retry] {func.__name__}: proba {attempt} nieudana ({error}), ponawiam...")
-                    time.sleep(delay)
+                    logger.warning("%s: proba %d nieudana (%s), ponawiam...", func.__name__, attempt, error)
 
         return wrapper
 
