@@ -3,7 +3,7 @@ import functools
 import threading
 from collections import defaultdict
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -80,6 +80,19 @@ class DuplicateFinder:
             list(executor.map(worker, self.files))  # list() zeby poczekac na wszystkie
         return self.only_duplicates(groups)
 
+    @requires_scan
+    def find_duplicates_processes(self) -> dict[str, list[Path]]:
+        """To samo, ale skroty licza sie w osobnych procesach (kazdy ma wlasny GIL)."""
+        with ProcessPoolExecutor(max_workers=self.workers) as executor:
+            # procesy tylko licza skroty i odsylaja je z powrotem, w tej samej kolejnosci co pliki
+            hashes = list(executor.map(hash_file, self.files, chunksize=8))
+
+        # slownik wypelnia tutaj, w glownym procesie, wiec klodka nie jest potrzebna
+        groups: dict[str, list[Path]] = defaultdict(list)
+        for path, file_hash in zip(self.files, hashes):
+            groups[file_hash].append(path)
+        return self.only_duplicates(groups)
+
     @staticmethod
     def only_duplicates(groups: dict[str, list[Path]]) -> dict[str, list[Path]]:
         """Zostawia tylko grupy w ktorych jest wiecej niz 1 plik."""
@@ -125,4 +138,11 @@ if __name__ == "__main__":
 
     # porownuje czy obie wersje znalazly to samo (sortuje bo watki koncza w roznej kolejnosci)
     same = {h: sorted(p) for h, p in seq.items()} == {h: sorted(p) for h, p in thr.items()}
+    print("Te same wyniki:", same)
+
+    # test procesow
+    start = time.perf_counter()
+    prc = finder.find_duplicates_processes()
+    print(f"Procesy:      {time.perf_counter() - start:.2f} s")
+    same = {h: sorted(p) for h, p in seq.items()} == {h: sorted(p) for h, p in prc.items()}
     print("Te same wyniki:", same)
