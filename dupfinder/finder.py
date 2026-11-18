@@ -1,7 +1,9 @@
 """Glowna klasa programu - szukanie duplikatow."""
 import functools
+import threading
 from collections import defaultdict
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -61,6 +63,26 @@ class DuplicateFinder:
         groups: dict[str, list[Path]] = defaultdict(list)
         for path in self.files:
             groups[hash_file(path)].append(path)
+        return self.only_duplicates(groups)
+
+    @requires_scan
+    def find_duplicates_threads(self) -> dict[str, list[Path]]:
+        """To samo co find_duplicates, ale skroty licza sie w kilku watkach naraz."""
+        groups: dict[str, list[Path]] = defaultdict(list)
+        lock = threading.Lock()  # klodka na wspolny slownik groups
+
+        def worker(path: Path) -> None:
+            file_hash = hash_file(path)  # to moze sie dziac w wielu watkach naraz
+            with lock:  # ale do slownika wpisuje tylko jeden watek na raz
+                groups[file_hash].append(path)
+
+        with ThreadPoolExecutor(max_workers=self.workers) as executor:
+            list(executor.map(worker, self.files))  # list() zeby poczekac na wszystkie
+        return self.only_duplicates(groups)
+
+    @staticmethod
+    def only_duplicates(groups: dict[str, list[Path]]) -> dict[str, list[Path]]:
+        """Zostawia tylko grupy w ktorych jest wiecej niz 1 plik."""
         return {h: paths for h, paths in groups.items() if len(paths) > 1}
 
 
@@ -89,3 +111,18 @@ if __name__ == "__main__":
     # test classmethod
     txt_finder = DuplicateFinder.from_text(str(test_dir), "txt")
     print("Plikow .txt:", txt_finder.scan())
+
+    # test watkow - wynik ma byc taki sam jak sekwencyjnie, tylko szybciej
+    import time
+
+    start = time.perf_counter()
+    seq = finder.find_duplicates()
+    print(f"Sekwencyjnie: {time.perf_counter() - start:.2f} s")
+
+    start = time.perf_counter()
+    thr = finder.find_duplicates_threads()
+    print(f"Watki:        {time.perf_counter() - start:.2f} s")
+
+    # porownuje czy obie wersje znalazly to samo (sortuje bo watki koncza w roznej kolejnosci)
+    same = {h: sorted(p) for h, p in seq.items()} == {h: sorted(p) for h, p in thr.items()}
+    print("Te same wyniki:", same)
