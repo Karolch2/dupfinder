@@ -19,6 +19,30 @@ def timer(func: Callable) -> Callable:
     return wrapper
 
 
+def retry(attempts: int = 3, delay: float = 0.5) -> Callable:
+    """Dekorator z parametrami - jak funkcja rzuci OSError to probuje jeszcze raz.
+
+    attempts - ile razy max probowac, delay - ile sekund czekac miedzy probami.
+    """
+    if attempts < 1:
+        raise ValueError("attempts musi byc co najmniej 1")
+
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            for attempt in range(1, attempts + 1):
+                try:
+                    return func(*args, **kwargs)  # udalo sie - koniec
+                except OSError as error:
+                    if attempt == attempts:  # to byla ostatnia proba
+                        raise
+                    print(f"[retry] {func.__name__}: proba {attempt} nieudana ({error}), ponawiam...")
+                    time.sleep(delay)
+
+        return wrapper
+
+    return decorator
+
 if __name__ == "__main__":
     # sprawdzam dekorator na prostej funkcji
     @timer
@@ -30,3 +54,17 @@ if __name__ == "__main__":
     print("Wynik:", slow_add(2, 3))
     print("Nazwa funkcji:", slow_add.__name__)
     print("Opis funkcji:", slow_add.__doc__)
+
+    # test retry - funkcja ktora 2 razy sie nie udaje a za 3 razem dziala
+    calls = 0
+
+    @retry(attempts=3, delay=0.1)
+    def flaky() -> str:
+        """Udaje plik ktory jest chwilowo zablokowany."""
+        global calls
+        calls += 1
+        if calls < 3:
+            raise OSError("plik zablokowany")
+        return "udalo sie!"
+
+    print(flaky())
