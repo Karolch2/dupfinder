@@ -12,6 +12,17 @@ def hash_file(path: Path) -> str:
         sha.update(chunk)  # dorzucam kolejny kawalek do liczenia
     return sha.hexdigest()
 
+def simple_checksum(path: Path, limit: int = 256 * 1024) -> int:
+    """Prosta suma kontrolna w czystym Pythonie - tylko do benchmarku GIL.
+    Liczy z pierwszych `limit` bajtow pliku. Petla po bajtach w Pythonie
+    caly czas trzyma GIL, wiec watki tu nie pomoga (w przeciwienstwie do hashlib).
+    """
+    with open(path, "rb") as file:
+        data = file.read(limit)  # biore tylko poczatek pliku zeby benchmark nie trwal wiecznie
+    total = 0
+    for byte in data:
+        total = (total * 31 + byte) % 4_294_967_296  # zeby liczba nie rosla w nieskonczonosc
+    return total
 
 if __name__ == "__main__":
     # szukam jakiejs kopii i jej oryginalu, i porownuje skroty
@@ -28,3 +39,7 @@ if __name__ == "__main__":
     print("Oryginal:", original.name, hash_file(original))
     print("Kopia:   ", copy.name, hash_file(copy))
     print("Inny:    ", other.name, hash_file(other))
+
+    # suma w czystym Pythonie - oryginal i kopia tez musza miec taka sama
+    print("Suma oryginalu:", simple_checksum(original))
+    print("Suma kopii:    ", simple_checksum(copy))
