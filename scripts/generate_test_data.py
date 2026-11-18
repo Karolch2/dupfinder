@@ -19,7 +19,15 @@ def generate(target: Path, n_unique: int, n_duplicates: int, seed: int = 42) -> 
     for i in range(n_unique):
         folder = rng.choice(subdirs) #losowy folder
         ext = rng.choice(extensions) #losowe rozszerzenie
-        name = f"plik_{i:03d}_2024-{rng.randint(1, 12):02d}-{rng.randint(1, 28):02d}{ext}"
+        month = rng.randint(1, 12)
+        day = rng.randint(1, 28)
+        # losuje format daty zeby sprawdzic czy regex lapie rozne zapisy
+        date_formats = [
+            f"2024-{month:02d}-{day:02d}",  # rrrr-mm-dd
+            f"{day:02d}.{month:02d}.2024",  # dd.mm.rrrr
+            f"2024_{month:02d}_{day:02d}",  # rrrr_mm_dd
+        ]
+        name = f"plik_{i:03d}_{rng.choice(date_formats)}{ext}"
         size = rng.randint(1_000, 2_000_000)  # losowy rozmiar od 1 KB do ~2 MB
         path = folder / name
         path.write_bytes(rng.randbytes(size)) #zapis losowych bajtów

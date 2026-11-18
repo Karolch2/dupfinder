@@ -1,8 +1,11 @@
 """Regexy używane w projekcie."""
 import re
 
-# wyciaga date z nazwy pliku, np. plik_007_2024-03-15.jpg -> 2024-03-15
-DATE_RE = re.compile(r"(?P<year>\d{4})-(?P<month>\d{2})-(?P<day>\d{2})")
+# data w formacie rok-miesiac-dzien, np. 2024-03-15
+DATE_YMD_RE = re.compile(r"(?P<year>\d{4})[-._](?P<month>\d{2})[-._](?P<day>\d{2})")
+
+# data na odwrot, dzien-miesiac-rok, np. 15-03-2024
+DATE_DMY_RE = re.compile(r"(?P<day>\d{2})[-._](?P<month>\d{2})[-._](?P<year>\d{4})")
 
 # dzieli nazwe pliku na czesc przed ostatnia kropka i rozszerzenie
 FILENAME_RE = re.compile(r"^(?P<stem>.+)\.(?P<ext>[A-Za-z0-9]+)$")
@@ -12,11 +15,13 @@ EXT_LIST_RE = re.compile(r"^[a-z0-9]+(,[a-z0-9]+)*$")
 
 
 def extract_date(filename: str) -> str | None:
-    """Wyciaga date z nazwy pliku, jak nie ma daty to zwraca None."""
-    match = DATE_RE.search(filename)  # search bo data jest w srodku nazwy
-    if match is None:
-        return None
-    return f"{match['year']}-{match['month']}-{match['day']}"
+    """Wyciaga date z nazwy pliku (oba formaty), jak nie ma daty to zwraca None."""
+    for pattern in (DATE_YMD_RE, DATE_DMY_RE):  # probuje po kolei oba wzorce
+        match = pattern.search(filename)
+        if match is not None:
+            # zawsze zwracam w jednym formacie zeby bylo latwo porownac
+            return f"{match['year']}-{match['month']}-{match['day']}"
+    return None
 
 
 def get_extension(filename: str) -> str | None:
@@ -41,6 +46,7 @@ def parse_extensions(text: str) -> set[str]:
 if __name__ == "__main__":
     # testuje czy wszystko dziala
     print(extract_date("plik_007_2024-03-15.jpg"))   # 2024-03-15
+    print(extract_date("zdjecie_15.03.2024.jpg"))    # 2024-03-15
     print(extract_date("notatki.txt"))               # None
     print(get_extension("kopia_001_plik_007.JPG"))   # jpg
     print(get_extension("README"))                   # None
